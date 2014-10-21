@@ -333,7 +333,7 @@ public class DiskBasedStreamCache implements Cache<InputStream> {
 	 */
 	public File getDataFileFoHeader(File headerFile) {
 		String path = headerFile.getPath();
-		return new File(mRootDirectory, path.substring(0, path.length()-headPostfix.length()-1));
+		return new File(mRootDirectory, path.substring(0, path.length()-headPostfix.length()));
 	}
 	
 	/**
