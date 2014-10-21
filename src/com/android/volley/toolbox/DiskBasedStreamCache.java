@@ -26,6 +26,7 @@ import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -36,530 +37,611 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Cache implementation that caches files directly onto the hard disk in the specified
- * directory. The default disk usage size is 5MB, but is configurable.
+ * Cache implementation that caches files directly onto the hard disk in the
+ * specified directory. The default disk usage size is 5MB, but is configurable.
  */
 public class DiskBasedStreamCache implements Cache<InputStream> {
 
-    /** Map of the Key, CacheHeader pairs */
-    private final Map<String, CacheHeader> mEntries =
-            new LinkedHashMap<String, CacheHeader>(16, .75f, true);
+	/** Map of the Key, CacheHeader pairs */
+	private final Map<String, CacheHeader> mEntries = new LinkedHashMap<String, CacheHeader>(
+			16, .75f, true);
 
-    /** Total amount of space currently used by the cache in bytes. */
-    private long mTotalSize = 0;
+	/** Total amount of space currently used by the cache in bytes. */
+	private long mTotalSize = 0;
 
-    /** The root directory to use for the cache. */
-    private final File mRootDirectory;
+	/** The root directory to use for the cache. */
+	private final File mRootDirectory;
 
-    /** The maximum size of the cache in bytes. */
-    private final int mMaxCacheSizeInBytes;
+	/** The maximum size of the cache in bytes. */
+	private final int mMaxCacheSizeInBytes;
 
-    /** Default maximum disk usage in bytes. */
-    private static final int DEFAULT_DISK_USAGE_BYTES = 5 * 1024 * 1024;
+	/** Default maximum disk usage in bytes. */
+	private static final int DEFAULT_DISK_USAGE_BYTES = 5 * 1024 * 1024;
 
-    /** High water mark percentage for the cache */
-    private static final float HYSTERESIS_FACTOR = 0.9f;
+	/** High water mark percentage for the cache */
+	private static final float HYSTERESIS_FACTOR = 0.9f;
 
-    /** Magic number for current version of cache file format. */
-    private static final int CACHE_MAGIC = 0x20140623;
+	/** Magic number for current version of cache file format. */
+	private static final int CACHE_MAGIC = 0x20140623;
+	
+	private static final String headPostfix = ".h";
 
-    /**
-     * Constructs an instance of the DiskBasedCache at the specified directory.
-     * @param rootDirectory The root directory of the cache.
-     * @param maxCacheSizeInBytes The maximum size of the cache in bytes.
-     */
-    public DiskBasedStreamCache(File rootDirectory, int maxCacheSizeInBytes) {
-        mRootDirectory = rootDirectory;
-        mMaxCacheSizeInBytes = maxCacheSizeInBytes;
-    }
+	/**
+	 * Constructs an instance of the DiskBasedCache at the specified directory.
+	 * 
+	 * @param rootDirectory
+	 *            The root directory of the cache.
+	 * @param maxCacheSizeInBytes
+	 *            The maximum size of the cache in bytes.
+	 */
+	public DiskBasedStreamCache(File rootDirectory, int maxCacheSizeInBytes) {
+		mRootDirectory = rootDirectory;
+		mMaxCacheSizeInBytes = maxCacheSizeInBytes;
+	}
 
-    /**
-     * Constructs an instance of the DiskBasedCache at the specified directory using
-     * the default maximum cache size of 5MB.
-     * @param rootDirectory The root directory of the cache.
-     */
-    public DiskBasedStreamCache(File rootDirectory) {
-        this(rootDirectory, DEFAULT_DISK_USAGE_BYTES);
-    }
+	/**
+	 * Constructs an instance of the DiskBasedCache at the specified directory
+	 * using the default maximum cache size of 5MB.
+	 * 
+	 * @param rootDirectory
+	 *            The root directory of the cache.
+	 */
+	public DiskBasedStreamCache(File rootDirectory) {
+		this(rootDirectory, DEFAULT_DISK_USAGE_BYTES);
+	}
 
-    /**
-     * Clears the cache. Deletes all cached files from disk.
-     */
-    @Override
-    public synchronized void clear() {
-        File[] files = mRootDirectory.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                file.delete();
-            }
-        }
-        mEntries.clear();
-        mTotalSize = 0;
-        VolleyLog.d("Cache cleared.");
-    }
+	/**
+	 * Clears the cache. Deletes all cached files from disk.
+	 */
+	@Override
+	public synchronized void clear() {
+		File[] files = mRootDirectory.listFiles();
+		if (files != null) {
+			for (File file : files) {
+				file.delete();
+			}
+		}
+		mEntries.clear();
+		mTotalSize = 0;
+		VolleyLog.d("Cache cleared.");
+	}
 
-    /**
-     * Returns the cache entry with the specified key if it exists, null otherwise.
-     */
-    @Override
-    public synchronized Entry<InputStream> get(String key) {
-        CacheHeader entry = mEntries.get(key);
-        // if the entry does not exist, return.
-        if (entry == null) {
-            return null;
-        }
+	/**
+	 * Returns the cache entry with the specified key if it exists, null
+	 * otherwise.
+	 */
+	@Override
+	public synchronized Entry<InputStream> get(String key) {
+		CacheHeader entry = mEntries.get(key);
+		// if the entry does not exist, return.
+		if (entry == null) {
+			return null;
+		}
 
-        File file = getFileForKey(key);
-        FileInputStream fis = null;
-        try {
-            fis = new FileInputStream(file);
-            CacheHeader.readHeader(fis); // eat header
-            //byte[] data = streamToBytes(cis, (int) (file.length() - cis.bytesRead));
-            return entry.toCacheEntry(fis);
-        } catch (IOException e) {
-            VolleyLog.d("%s: %s", file.getAbsolutePath(), e.toString());
-            remove(key);
-            return null;
-        } finally {
-            /*if (cis != null) {
-                try {
-                    cis.close();
-                } catch (IOException ioe) {
-                    return null;
-                }
-            }*/
-        }
-    }
-    
-    
+		File file = getFileForKey(key);
+		FileInputStream fis = null;
+		try {
+			fis = new FileInputStream(file);
+			return entry.toCacheEntry(fis);
+		} catch (IOException e) {
+			VolleyLog.d("%s: %s", file.getAbsolutePath(), e.toString());
+			remove(key);
+			return null;
+		} finally {
+			/*
+			 * if (cis != null) { try { cis.close(); } catch (IOException ioe) {
+			 * return null; } }
+			 */
+		}
+	}
 
-    /**
-     * Initializes the DiskBasedCache by scanning for all files currently in the
-     * specified root directory. Creates the root directory if necessary.
-     */
-    @Override
-    public synchronized void initialize() {
-        if (!mRootDirectory.exists()) {
-            if (!mRootDirectory.mkdirs()) {
-                VolleyLog.e("Unable to create cache dir %s", mRootDirectory.getAbsolutePath());
-            }
-            return;
-        }
+	/**
+	 * Initializes the DiskBasedCache by scanning for all files currently in the
+	 * specified root directory. Creates the root directory if necessary.
+	 */
+	@Override
+	public synchronized void initialize() {
+		if (!mRootDirectory.exists()) {
+			if (!mRootDirectory.mkdirs()) {
+				VolleyLog.e("Unable to create cache dir %s",
+						mRootDirectory.getAbsolutePath());
+			}
+			return;
+		}
 
-        File[] files = mRootDirectory.listFiles();
-        if (files == null) {
-            return;
-        }
-        for (File file : files) {
-            BufferedInputStream fis = null;
-            try {
-                fis = new BufferedInputStream(new FileInputStream(file));
-                CacheHeader entry = CacheHeader.readHeader(fis);
-                entry.size = file.length();
-                putEntry(entry.key, entry);
-            } catch (IOException e) {
-                if (file != null) {
-                   file.delete();
-                }
-            } finally {
-                try {
-                    if (fis != null) {
-                        fis.close();
-                    }
-                } catch (IOException ignored) { }
-            }
-        }
-    }
+		File[] files = mRootDirectory.listFiles(new FilenameFilter() {
 
-    /**
-     * Invalidates an entry in the cache.
-     * @param key Cache key
-     * @param fullExpire True to fully expire the entry, false to soft expire
-     */
-    @Override
-    public synchronized void invalidate(String key, boolean fullExpire) {
-        Entry<InputStream> entry = get(key);
-        if (entry != null) {
-            entry.softTtl = 0;
-            if (fullExpire) {
-                entry.ttl = 0;
-            }
-            put(key, entry);
-        }
+			@Override
+			public boolean accept(File dir, String filename) {
+				return filename.endsWith(".h");
+			}
+		});
 
-    }
+		if (files == null) {
+			return;
+		}
+		for (File file : files) {
+			BufferedInputStream fis = null;
+			try {
+				fis = new BufferedInputStream(new FileInputStream(file));
+				CacheHeader entry = CacheHeader.readHeader(fis);
+				entry.size = getDataFileFoHeader(file).length();
+				putEntry(entry.key, entry);
+			} catch (IOException e) {
+				if (file != null) {
+					file.delete();
+				}
+			} finally {
+				try {
+					if (fis != null) {
+						fis.close();
+					}
+				} catch (IOException ignored) {
+				}
+			}
+		}
+	}
 
-    /**
-     * Puts the entry with the specified key into the cache.
-     */
-    @Override
-    public synchronized void put(String key, Entry<InputStream> entry) {
-        pruneIfNeeded(entry.length);
-        File file = getFileForKey(key);
-        try {
-            FileOutputStream fos = new FileOutputStream(file);
-            CacheHeader e = new CacheHeader(key, entry);
-            boolean success = e.writeHeader(fos);
-            if (!success) {
-                fos.close();
-                VolleyLog.d("Failed to write header for %s", file.getAbsolutePath());
-                throw new IOException();
-            }
-            writeToFile(fos, entry.data, entry.length);
-            //fos.write(entry.data);
-            fos.close();
-            putEntry(key, e);
-            return;
-        } catch (IOException e) {
-        } finally {
-        	if (entry.data != null) {
-            try {
-            	entry.data.close();
-            } catch (IOException ioe) {
-                return;
-            }
-        }
-        }
-        
-        boolean deleted = file.delete();
-        if (!deleted) {
-            VolleyLog.d("Could not clean up file %s", file.getAbsolutePath());
-        }
-    }
+	/**
+	 * Invalidates an entry in the cache.
+	 * 
+	 * @param key
+	 *            Cache key
+	 * @param fullExpire
+	 *            True to fully expire the entry, false to soft expire
+	 */
+	@Override
+	public synchronized void invalidate(String key, boolean fullExpire) {
+		Entry<InputStream> entry = get(key);
+		if (entry != null) {
+			entry.softTtl = 0;
+			if (fullExpire) {
+				entry.ttl = 0;
+			}
+			put(key, entry);
+		}
 
-    private void writeToFile(FileOutputStream fos, InputStream in, int length )  throws IOException{
-    	 byte[] bytes = new byte[4096];
-         int count;
-         int totalOffset = 0;
-         while ( totalOffset < length ) {
-        	 int pos = 0;
-	         while (pos < bytes.length && ((count = in.read(bytes, pos, bytes.length - pos)) != -1)) {
-	             pos += count;
-	             totalOffset += count;
-	         }
-	         
-	         fos.write(bytes, 0, pos);
-         }
-         
-         if (totalOffset != length) {
-             throw new IOException("Expected " + length + " bytes, read " + totalOffset + " bytes");
-         }
-    }
-    /**
-     * Removes the specified key from the cache if it exists.
-     */
-    @Override
-    public synchronized void remove(String key) {
-        boolean deleted = getFileForKey(key).delete();
-        removeEntry(key);
-        if (!deleted) {
-            VolleyLog.d("Could not delete cache entry for key=%s, filename=%s",
-                    key, getFilenameForKey(key));
-        }
-    }
+	}
 
-    /**
-     * Creates a pseudo-unique filename for the specified cache key.
-     * @param key The key to generate a file name for.
-     * @return A pseudo-unique filename.
-     */
-    private String getFilenameForKey(String key) {
-        int firstHalfLength = key.length() / 2;
-        String localFilename = String.valueOf(key.substring(0, firstHalfLength).hashCode());
-        localFilename += String.valueOf(key.substring(firstHalfLength).hashCode());
-        return localFilename;
-    }
+	/**
+	 * Puts the entry with the specified key into the cache.
+	 */
+	@Override
+	public synchronized void put(String key, Entry<InputStream> entry) {
+		put( key, entry, true);
+	}
 
-    /**
-     * Returns a file object for the given cache key.
-     */
-    public File getFileForKey(String key) {
-        return new File(mRootDirectory, getFilenameForKey(key));
-    }
+	public synchronized void put(String key, Entry<InputStream> entry,
+			boolean bModified) {
+		if ( bModified )  {
+		    pruneIfNeeded(entry.length);
+		}
+		
+		File file = getHeaderFileForKey(key);
+		try {
+			FileOutputStream fos = new FileOutputStream(file);
+			CacheHeader e = new CacheHeader(key, entry);
+			boolean success = e.writeHeader(fos);
+			if (!success) {
+				fos.close();
+				VolleyLog.d("Failed to write header for %s",
+						file.getAbsolutePath());
+				throw new IOException();
+			}
 
-    /**
-     * Prunes the cache to fit the amount of bytes specified.
-     * @param neededSpace The amount of bytes we are trying to fit into the cache.
-     */
-    private void pruneIfNeeded(int neededSpace) {
-        if ((mTotalSize + neededSpace) < mMaxCacheSizeInBytes) {
-            return;
-        }
-        if (VolleyLog.DEBUG) {
-            VolleyLog.v("Pruning old cache entries.");
-        }
+			fos.close();
 
-        long before = mTotalSize;
-        int prunedFiles = 0;
-        long startTime = SystemClock.elapsedRealtime();
+			if (bModified) {
+				FileOutputStream fdos = new FileOutputStream(getFileForKey(key));
+				writeToFile(fdos, entry.data, entry.length);
+				fdos.close();
+			}
+			putEntry(key, e);
+			return;
+		} catch (IOException e) {
+		} finally {
+			if (entry.data != null) {
+				try {
+					entry.data.close();
+				} catch (IOException ioe) {
+					return;
+				}
+			}
+		}
 
-        Iterator<Map.Entry<String, CacheHeader>> iterator = mEntries.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<String, CacheHeader> entry = iterator.next();
-            CacheHeader e = entry.getValue();
-            boolean deleted = getFileForKey(e.key).delete();
-            if (deleted) {
-                mTotalSize -= e.size;
-            } else {
-               VolleyLog.d("Could not delete cache entry for key=%s, filename=%s",
-                       e.key, getFilenameForKey(e.key));
-            }
-            iterator.remove();
-            prunedFiles++;
+		boolean deleted = file.delete();
+		if (!deleted) {
+			VolleyLog.d("Could not clean up file %s", file.getAbsolutePath());
+		}
+	}
 
-            if ((mTotalSize + neededSpace) < mMaxCacheSizeInBytes * HYSTERESIS_FACTOR) {
-                break;
-            }
-        }
+	private void writeToFile(FileOutputStream fos, InputStream in, int length)
+			throws IOException {
+		byte[] bytes = new byte[4096];
+		int count;
+		int totalOffset = 0;
+		while (totalOffset < length) {
+			int pos = 0;
+			while (pos < bytes.length
+					&& ((count = in.read(bytes, pos, bytes.length - pos)) != -1)) {
+				pos += count;
+				totalOffset += count;
+			}
 
-        if (VolleyLog.DEBUG) {
-            VolleyLog.v("pruned %d files, %d bytes, %d ms",
-                    prunedFiles, (mTotalSize - before), SystemClock.elapsedRealtime() - startTime);
-        }
-    }
+			fos.write(bytes, 0, pos);
+		}
 
-    /**
-     * Puts the entry with the specified key into the cache.
-     * @param key The key to identify the entry by.
-     * @param entry The entry to cache.
-     */
-    private void putEntry(String key, CacheHeader entry) {
-        if (!mEntries.containsKey(key)) {
-            mTotalSize += entry.size;
-        } else {
-            CacheHeader oldEntry = mEntries.get(key);
-            mTotalSize += (entry.size - oldEntry.size);
-        }
-        mEntries.put(key, entry);
-    }
+		if (totalOffset != length) {
+			throw new IOException("Expected " + length + " bytes, read "
+					+ totalOffset + " bytes");
+		}
+	}
 
-    /**
-     * Removes the entry identified by 'key' from the cache.
-     */
-    private void removeEntry(String key) {
-        CacheHeader entry = mEntries.get(key);
-        if (entry != null) {
-            mTotalSize -= entry.size;
-            mEntries.remove(key);
-        }
-    }
+	/**
+	 * Removes the specified key from the cache if it exists.
+	 */
+	@Override
+	public synchronized void remove(String key) {
+		boolean deleted = getHeaderFileForKey(key).delete();
+		removeEntry(key);
+		if (!deleted) {
+			VolleyLog.d("Could not delete cache entry for key=%s, filename=%s",
+					key, getFilenameForKey(key));
+		}
+		
+		deleted = getFileForKey(key ).delete();
+		if (!deleted) {
+			VolleyLog.d("Could not delete cache data for key=%s, filename=%s",
+					key, getFilenameForKey(key));
+		}
+	}
 
-    /**
-     * Reads the contents of an InputStream into a byte[].
-     * */
-    private static byte[] streamToBytes(InputStream in, int length) throws IOException {
-        byte[] bytes = new byte[length];
-        int count;
-        int pos = 0;
-        while (pos < length && ((count = in.read(bytes, pos, length - pos)) != -1)) {
-            pos += count;
-        }
-        if (pos != length) {
-            throw new IOException("Expected " + length + " bytes, read " + pos + " bytes");
-        }
-        return bytes;
-    }
+	/**
+	 * Creates a pseudo-unique filename for the specified cache key.
+	 * 
+	 * @param key
+	 *            The key to generate a file name for.
+	 * @return A pseudo-unique filename.
+	 */
+	private String getFilenameForKey(String key) {
+		int firstHalfLength = key.length() / 2;
+		String localFilename = String.valueOf(key.substring(0, firstHalfLength)
+				.hashCode());
+		localFilename += String.valueOf(key.substring(firstHalfLength)
+				.hashCode());
+		return localFilename;
+	}
 
-    /**
-     * Handles holding onto the cache headers for an entry.
-     */
-    // Visible for testing.
-    static class CacheHeader {
-        /** The size of the data identified by this CacheHeader. (This is not
-         * serialized to disk. */
-        public long size;
+	/**
+	 * Returns a file object for the given cache key.
+	 */
+	public File getFileForKey(String key) {
+		return new File(mRootDirectory, getFilenameForKey(key));
+	}
 
-        /** The key that identifies the cache entry. */
-        public String key;
+	
+	/**
+	 * Returns a file objectc containing cache meta-data for the given cache key.
+	 */
+	public File getHeaderFileForKey(String key) {
+		return new File(mRootDirectory, getFilenameForKey(key)+headPostfix);
+	}
+	
+	
+	/**
+	 * Returns a file objectc containing cache meta-data for the given cache key.
+	 */
+	public File getDataFileFoHeader(File headerFile) {
+		String path = headerFile.getPath();
+		return new File(mRootDirectory, path.substring(0, path.length()-headPostfix.length()-1));
+	}
+	
+	/**
+	 * Prunes the cache to fit the amount of bytes specified.
+	 * 
+	 * @param neededSpace
+	 *            The amount of bytes we are trying to fit into the cache.
+	 */
+	private void pruneIfNeeded(int neededSpace) {
+		if ((mTotalSize + neededSpace) < mMaxCacheSizeInBytes) {
+			return;
+		}
+		if (VolleyLog.DEBUG) {
+			VolleyLog.v("Pruning old cache entries.");
+		}
 
-        /** ETag for cache coherence. */
-        public String etag;
+		long before = mTotalSize;
+		int prunedFiles = 0;
+		long startTime = SystemClock.elapsedRealtime();
 
-        /** Date of this response as reported by the server. */
-        public long serverDate;
+		Iterator<Map.Entry<String, CacheHeader>> iterator = mEntries.entrySet()
+				.iterator();
+		while (iterator.hasNext()) {
+			Map.Entry<String, CacheHeader> entry = iterator.next();
+			CacheHeader e = entry.getValue();
+			boolean deleted = getFileForKey(e.key).delete();
+			deleted &= getHeaderFileForKey(e.key).delete();
+			if (deleted) {
+				mTotalSize -= e.size;
+			} else {
+				VolleyLog.d(
+						"Could not delete cache entry for key=%s, filename=%s",
+						e.key, getFilenameForKey(e.key));
+			}
+			iterator.remove();
+			prunedFiles++;
 
-        /** TTL for this record. */
-        public long ttl;
+			if ((mTotalSize + neededSpace) < mMaxCacheSizeInBytes
+					* HYSTERESIS_FACTOR) {
+				break;
+			}
+		}
 
-        /** Soft TTL for this record. */
-        public long softTtl;
+		if (VolleyLog.DEBUG) {
+			VolleyLog.v("pruned %d files, %d bytes, %d ms", prunedFiles,
+					(mTotalSize - before), SystemClock.elapsedRealtime()
+							- startTime);
+		}
+	}
 
-        /** Headers from the response resulting in this cache entry. */
-        public Map<String, String> responseHeaders;
+	/**
+	 * Puts the entry with the specified key into the cache.
+	 * 
+	 * @param key
+	 *            The key to identify the entry by.
+	 * @param entry
+	 *            The entry to cache.
+	 */
+	private void putEntry(String key, CacheHeader entry) {
+		if (!mEntries.containsKey(key)) {
+			mTotalSize += entry.size;
+		} else {
+			CacheHeader oldEntry = mEntries.get(key);
+			mTotalSize += (entry.size - oldEntry.size);
+		}
+		mEntries.put(key, entry);
+	}
 
-        private CacheHeader() { }
+	/**
+	 * Removes the entry identified by 'key' from the cache.
+	 */
+	private void removeEntry(String key) {
+		CacheHeader entry = mEntries.get(key);
+		if (entry != null) {
+			mTotalSize -= entry.size;
+			mEntries.remove(key);
+		}
+	}
 
-        /**
-         * Instantiates a new CacheHeader object
-         * @param key The key that identifies the cache entry
-         * @param entry The cache entry.
-         */
-        public CacheHeader(String key, Entry<InputStream> entry) {
-            this.key = key;
-            this.size = entry.length;
-            this.etag = entry.etag;
-            this.serverDate = entry.serverDate;
-            this.ttl = entry.ttl;
-            this.softTtl = entry.softTtl;
-            this.responseHeaders = entry.responseHeaders;
-        }
+	/**
+	 * Reads the contents of an InputStream into a byte[].
+	 * */
+	private static byte[] streamToBytes(InputStream in, int length)
+			throws IOException {
+		byte[] bytes = new byte[length];
+		int count;
+		int pos = 0;
+		while (pos < length
+				&& ((count = in.read(bytes, pos, length - pos)) != -1)) {
+			pos += count;
+		}
+		if (pos != length) {
+			throw new IOException("Expected " + length + " bytes, read " + pos
+					+ " bytes");
+		}
+		return bytes;
+	}
 
-        /**
-         * Reads the header off of an InputStream and returns a CacheHeader object.
-         * @param is The InputStream to read from.
-         * @throws IOException
-         */
-        public static CacheHeader readHeader(InputStream is) throws IOException {
-            CacheHeader entry = new CacheHeader();
-            int magic = readInt(is);
-            if (magic != CACHE_MAGIC) {
-                // don't bother deleting, it'll get pruned eventually
-                throw new IOException();
-            }
-            entry.key = readString(is);
-            entry.etag = readString(is);
-            if (entry.etag.equals("")) {
-                entry.etag = null;
-            }
-            entry.serverDate = readLong(is);
-            entry.ttl = readLong(is);
-            entry.softTtl = readLong(is);
-            entry.responseHeaders = readStringStringMap(is);
-            return entry;
-        }
+	/**
+	 * Handles holding onto the cache headers for an entry.
+	 */
+	// Visible for testing.
+	static class CacheHeader {
+		/**
+		 * The size of the data identified by this CacheHeader. (This is not
+		 * serialized to disk.
+		 */
+		public long size;
 
-        /**
-         * Creates a cache entry for the specified data.
-         */
-        public Entry<InputStream> toCacheEntry(InputStream data) {
-            Entry<InputStream> e = new Entry<InputStream>();
-            e.data = data;
-            e.etag = etag;
-            e.serverDate = serverDate;
-            e.ttl = ttl;
-            e.softTtl = softTtl;
-            e.responseHeaders = responseHeaders;
-            return e;
-        }
+		/** The key that identifies the cache entry. */
+		public String key;
 
+		/** ETag for cache coherence. */
+		public String etag;
 
-        /**
-         * Writes the contents of this CacheHeader to the specified OutputStream.
-         */
-        public boolean writeHeader(OutputStream os) {
-            try {
-                writeInt(os, CACHE_MAGIC);
-                writeString(os, key);
-                writeString(os, etag == null ? "" : etag);
-                writeLong(os, serverDate);
-                writeLong(os, ttl);
-                writeLong(os, softTtl);
-                writeStringStringMap(responseHeaders, os);
-                os.flush();
-                return true;
-            } catch (IOException e) {
-                VolleyLog.d("%s", e.toString());
-                return false;
-            }
-        }
+		/** Date of this response as reported by the server. */
+		public long serverDate;
 
-    }
+		/** TTL for this record. */
+		public long ttl;
 
-    /*
-     * Homebrewed simple serialization system used for reading and writing cache
-     * headers on disk. Once upon a time, this used the standard Java
-     * Object{Input,Output}Stream, but the default implementation relies heavily
-     * on reflection (even for standard types) and generates a ton of garbage.
-     */
+		/** Soft TTL for this record. */
+		public long softTtl;
 
-    /**
-     * Simple wrapper around {@link InputStream#read()} that throws EOFException
-     * instead of returning -1.
-     */
-    private static int read(InputStream is) throws IOException {
-        int b = is.read();
-        if (b == -1) {
-            throw new EOFException();
-        }
-        return b;
-    }
+		/** Headers from the response resulting in this cache entry. */
+		public Map<String, String> responseHeaders;
 
-    static void writeInt(OutputStream os, int n) throws IOException {
-        os.write((n >> 0) & 0xff);
-        os.write((n >> 8) & 0xff);
-        os.write((n >> 16) & 0xff);
-        os.write((n >> 24) & 0xff);
-    }
+		private CacheHeader() {
+		}
 
-    static int readInt(InputStream is) throws IOException {
-        int n = 0;
-        n |= (read(is) << 0);
-        n |= (read(is) << 8);
-        n |= (read(is) << 16);
-        n |= (read(is) << 24);
-        return n;
-    }
+		/**
+		 * Instantiates a new CacheHeader object
+		 * 
+		 * @param key
+		 *            The key that identifies the cache entry
+		 * @param entry
+		 *            The cache entry.
+		 */
+		public CacheHeader(String key, Entry<InputStream> entry) {
+			this.key = key;
+			this.size = entry.length;
+			this.etag = entry.etag;
+			this.serverDate = entry.serverDate;
+			this.ttl = entry.ttl;
+			this.softTtl = entry.softTtl;
+			this.responseHeaders = entry.responseHeaders;
+		}
 
-    static void writeLong(OutputStream os, long n) throws IOException {
-        os.write((byte)(n >>> 0));
-        os.write((byte)(n >>> 8));
-        os.write((byte)(n >>> 16));
-        os.write((byte)(n >>> 24));
-        os.write((byte)(n >>> 32));
-        os.write((byte)(n >>> 40));
-        os.write((byte)(n >>> 48));
-        os.write((byte)(n >>> 56));
-    }
+		/**
+		 * Reads the header off of an InputStream and returns a CacheHeader
+		 * object.
+		 * 
+		 * @param is
+		 *            The InputStream to read from.
+		 * @throws IOException
+		 */
+		public static CacheHeader readHeader(InputStream is) throws IOException {
+			CacheHeader entry = new CacheHeader();
+			int magic = readInt(is);
+			if (magic != CACHE_MAGIC) {
+				// don't bother deleting, it'll get pruned eventually
+				throw new IOException();
+			}
+			entry.key = readString(is);
+			entry.etag = readString(is);
+			if (entry.etag.equals("")) {
+				entry.etag = null;
+			}
+			entry.serverDate = readLong(is);
+			entry.ttl = readLong(is);
+			entry.softTtl = readLong(is);
+			entry.responseHeaders = readStringStringMap(is);
+			return entry;
+		}
 
-    static long readLong(InputStream is) throws IOException {
-        long n = 0;
-        n |= ((read(is) & 0xFFL) << 0);
-        n |= ((read(is) & 0xFFL) << 8);
-        n |= ((read(is) & 0xFFL) << 16);
-        n |= ((read(is) & 0xFFL) << 24);
-        n |= ((read(is) & 0xFFL) << 32);
-        n |= ((read(is) & 0xFFL) << 40);
-        n |= ((read(is) & 0xFFL) << 48);
-        n |= ((read(is) & 0xFFL) << 56);
-        return n;
-    }
+		/**
+		 * Creates a cache entry for the specified data.
+		 */
+		public Entry<InputStream> toCacheEntry(InputStream data) {
+			Entry<InputStream> e = new Entry<InputStream>();
+			e.data = data;
+			e.etag = etag;
+			e.serverDate = serverDate;
+			e.ttl = ttl;
+			e.softTtl = softTtl;
+			e.responseHeaders = responseHeaders;
+			return e;
+		}
 
-    static void writeString(OutputStream os, String s) throws IOException {
-        byte[] b = s.getBytes("UTF-8");
-        writeLong(os, b.length);
-        os.write(b, 0, b.length);
-    }
+		/**
+		 * Writes the contents of this CacheHeader to the specified
+		 * OutputStream.
+		 */
+		public boolean writeHeader(OutputStream os) {
+			try {
+				writeInt(os, CACHE_MAGIC);
+				writeString(os, key);
+				writeString(os, etag == null ? "" : etag);
+				writeLong(os, serverDate);
+				writeLong(os, ttl);
+				writeLong(os, softTtl);
+				writeStringStringMap(responseHeaders, os);
+				os.flush();
+				return true;
+			} catch (IOException e) {
+				VolleyLog.d("%s", e.toString());
+				return false;
+			}
+		}
 
-    static String readString(InputStream is) throws IOException {
-        int n = (int) readLong(is);
-        byte[] b = streamToBytes(is, n);
-        return new String(b, "UTF-8");
-    }
+	}
 
-    static void writeStringStringMap(Map<String, String> map, OutputStream os) throws IOException {
-        if (map != null) {
-            writeInt(os, map.size());
-            for (Map.Entry<String, String> entry : map.entrySet()) {
-                writeString(os, entry.getKey());
-                writeString(os, entry.getValue());
-            }
-        } else {
-            writeInt(os, 0);
-        }
-    }
+	/*
+	 * Homebrewed simple serialization system used for reading and writing cache
+	 * headers on disk. Once upon a time, this used the standard Java
+	 * Object{Input,Output}Stream, but the default implementation relies heavily
+	 * on reflection (even for standard types) and generates a ton of garbage.
+	 */
 
-    static Map<String, String> readStringStringMap(InputStream is) throws IOException {
-        int size = readInt(is);
-        Map<String, String> result = (size == 0)
-                ? Collections.<String, String>emptyMap()
-                : new HashMap<String, String>(size);
-        for (int i = 0; i < size; i++) {
-            String key = readString(is).intern();
-            String value = readString(is).intern();
-            result.put(key, value);
-        }
-        return result;
-    }
+	/**
+	 * Simple wrapper around {@link InputStream#read()} that throws EOFException
+	 * instead of returning -1.
+	 */
+	private static int read(InputStream is) throws IOException {
+		int b = is.read();
+		if (b == -1) {
+			throw new EOFException();
+		}
+		return b;
+	}
 
+	static void writeInt(OutputStream os, int n) throws IOException {
+		os.write((n >> 0) & 0xff);
+		os.write((n >> 8) & 0xff);
+		os.write((n >> 16) & 0xff);
+		os.write((n >> 24) & 0xff);
+	}
+
+	static int readInt(InputStream is) throws IOException {
+		int n = 0;
+		n |= (read(is) << 0);
+		n |= (read(is) << 8);
+		n |= (read(is) << 16);
+		n |= (read(is) << 24);
+		return n;
+	}
+
+	static void writeLong(OutputStream os, long n) throws IOException {
+		os.write((byte) (n >>> 0));
+		os.write((byte) (n >>> 8));
+		os.write((byte) (n >>> 16));
+		os.write((byte) (n >>> 24));
+		os.write((byte) (n >>> 32));
+		os.write((byte) (n >>> 40));
+		os.write((byte) (n >>> 48));
+		os.write((byte) (n >>> 56));
+	}
+
+	static long readLong(InputStream is) throws IOException {
+		long n = 0;
+		n |= ((read(is) & 0xFFL) << 0);
+		n |= ((read(is) & 0xFFL) << 8);
+		n |= ((read(is) & 0xFFL) << 16);
+		n |= ((read(is) & 0xFFL) << 24);
+		n |= ((read(is) & 0xFFL) << 32);
+		n |= ((read(is) & 0xFFL) << 40);
+		n |= ((read(is) & 0xFFL) << 48);
+		n |= ((read(is) & 0xFFL) << 56);
+		return n;
+	}
+
+	static void writeString(OutputStream os, String s) throws IOException {
+		byte[] b = s.getBytes("UTF-8");
+		writeLong(os, b.length);
+		os.write(b, 0, b.length);
+	}
+
+	static String readString(InputStream is) throws IOException {
+		int n = (int) readLong(is);
+		byte[] b = streamToBytes(is, n);
+		return new String(b, "UTF-8");
+	}
+
+	static void writeStringStringMap(Map<String, String> map, OutputStream os)
+			throws IOException {
+		if (map != null) {
+			writeInt(os, map.size());
+			for (Map.Entry<String, String> entry : map.entrySet()) {
+				writeString(os, entry.getKey());
+				writeString(os, entry.getValue());
+			}
+		} else {
+			writeInt(os, 0);
+		}
+	}
+
+	static Map<String, String> readStringStringMap(InputStream is)
+			throws IOException {
+		int size = readInt(is);
+		Map<String, String> result = (size == 0) ? Collections
+				.<String, String> emptyMap()
+				: new HashMap<String, String>(size);
+		for (int i = 0; i < size; i++) {
+			String key = readString(is).intern();
+			String value = readString(is).intern();
+			result.put(key, value);
+		}
+		return result;
+	}
 
 }

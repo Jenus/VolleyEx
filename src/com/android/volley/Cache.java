@@ -36,6 +36,14 @@ public interface Cache<I> {
      * @param Entry<I> Data to store and metadata for cache coherency, TTL, etc.
      */
     public void put(String key, Entry<I> entry);
+    
+    /**
+     * Adds or replaces an Entry<I> to the cache.
+     * @param key Cache key
+     * @param Entry<I> Data to store and metadata for cache coherency, TTL, etc.
+     * @param bDataModifed Data part of cache is modified, if Not, You can not save data.
+     */
+    public void put(String key, Entry<I> entry, boolean bDataModifed);
 
     /**
      * Performs any potentially long-running actions needed to initialize the cache;

@@ -23,6 +23,10 @@ import android.os.Process;
 
 import java.util.concurrent.BlockingQueue;
 
+import org.apache.http.HttpStatus;
+
+import com.android.volley.Cache.Entry;
+
 /**
  * Provides a thread for performing network dispatch from a queue of requests.
  *
@@ -122,11 +126,15 @@ public class NetworkDispatcher<I> extends Thread {
                 request.addMarker("network-parse-complete");
 
                 // Write to cache if applicable.
-                // TODO: Only update cache metadata instead of entire record for 304s.
                 if (request.shouldCache() && response.cacheEntry != null) {
-                    mCache.put(request.getCacheKey(), response.cacheEntry);
+                    mCache.put(request.getCacheKey(), response.cacheEntry, networkResponse.statusCode != HttpStatus.SC_NOT_MODIFIED);
                     request.addMarker("network-cache-written");
-                }
+                    
+                    //read cache (consume response stream)
+                    Entry<I> entry =  mCache.get(request.getCacheKey());
+                    response = request.parseNetworkResponse(
+                            new NetworkResponse<I>(entry.data, entry.length, entry.responseHeaders));
+               }
 
                 // Post the response back.
                 request.markDelivered();

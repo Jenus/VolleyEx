@@ -20,6 +20,7 @@ import android.os.SystemClock;
 
 import com.android.volley.AuthFailureError;
 import com.android.volley.Cache;
+import com.android.volley.Cache.Entry;
 import com.android.volley.Network;
 import com.android.volley.NetworkError;
 import com.android.volley.NetworkResponse;
@@ -97,12 +98,20 @@ public class StreamNetwork implements Network<InputStream> {
                 responseHeaders = convertHeaders(httpResponse.getAllHeaders());
                 // Handle cache validation.
                 if (statusCode == HttpStatus.SC_NOT_MODIFIED) {
-                    return new NetworkResponse<InputStream>(HttpStatus.SC_NOT_MODIFIED,
-                            request.getCacheEntry() == null ? null : request.getCacheEntry().data,
-                            request.getCacheEntry() == null ? 0 : request.getCacheEntry().length,
-                            responseHeaders, true);
+                    Entry<InputStream> entry = request.getCacheEntry();
+                    if (entry == null) {
+                        return new NetworkResponse<InputStream>(HttpStatus.SC_NOT_MODIFIED, null, 0,
+                                responseHeaders, true);
+                    }
+                    // A HTTP 304 response does not have all header fields. We
+                    // have to use the header fields from the cache entry plus
+                    // the new ones from the response.
+                    // http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.5
+                    entry.responseHeaders.putAll(responseHeaders);
+                    return new NetworkResponse<InputStream>(HttpStatus.SC_NOT_MODIFIED, entry.data, entry.length, 
+                            entry.responseHeaders, true);
                 }
-
+                
                 int contentLength = 0;
                 // Some responses such as 204s do not have content.  We must check.
                 if (httpResponse.getEntity() != null) {

@@ -187,14 +187,17 @@ public class DiskBasedCache implements Cache<byte[]> {
         }
 
     }
-
+    
     /**
      * Puts the entry with the specified key into the cache.
      */
     @Override
-    public synchronized void put(String key, Entry<byte[]> entry) {
-        pruneIfNeeded(entry.data.length);
-        File file = getFileForKey(key);
+    public synchronized void put(String key, Entry<byte[]> entry, boolean bModified) {
+    	if ( bModified ) {
+    		pruneIfNeeded(entry.data.length);
+    	}
+    	
+    	File file = getFileForKey(key);
         try {
             FileOutputStream fos = new FileOutputStream(file);
             CacheHeader e = new CacheHeader(key, entry);
@@ -214,6 +217,14 @@ public class DiskBasedCache implements Cache<byte[]> {
         if (!deleted) {
             VolleyLog.d("Could not clean up file %s", file.getAbsolutePath());
         }
+    }
+
+    /**
+     * Puts the entry with the specified key into the cache.
+     */
+    @Override
+    public synchronized void put(String key, Entry<byte[]> entry) {
+    	put(key, entry, true);
     }
 
     /**

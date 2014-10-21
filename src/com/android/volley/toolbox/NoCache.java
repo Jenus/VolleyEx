@@ -34,6 +34,10 @@ public class NoCache<I> implements Cache<I> {
     @Override
     public void put(String key, Entry<I> entry) {
     }
+    
+    @Override
+    public void put(String key, Entry<I> entry, boolean bDataModifed) {
+    }
 
     @Override
     public void invalidate(String key, boolean fullExpire) {
